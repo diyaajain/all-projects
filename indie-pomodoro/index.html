@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pond Timer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="scene" aria-label="Duck themed pomodoro timer">
+        <div class="sky-dots" aria-hidden="true"></div>
+        <div class="brand">
+          <span class="brand-mark">P</span>
+          <span>Pond Timer</span>
+        </div>
+
+        <div class="layout">
+          <section class="timer-panel" aria-label="Pomodoro controls">
+            <div class="mode-tabs" role="tablist" aria-label="Timer mode">
+              <button class="mode is-active" type="button" data-mode="focus">Focus</button>
+              <button class="mode" type="button" data-mode="short">Short</button>
+              <button class="mode" type="button" data-mode="long">Long</button>
+            </div>
+
+            <div class="time-wrap" aria-live="polite">
+              <svg class="progress-ring" viewBox="0 0 240 240" aria-hidden="true">
+                <circle class="ring-track" cx="120" cy="120" r="104"></circle>
+                <circle class="ring-progress" cx="120" cy="120" r="104"></circle>
+              </svg>
+              <div class="time-stack">
+                <span class="status-kicker" id="statusKicker">settle in</span>
+                <h1 id="timeDisplay">25:00</h1>
+                <p id="modeCopy">Deep work, soft pond energy.</p>
+              </div>
+            </div>
+
+            <div class="controls" aria-label="Timer actions">
+              <button class="icon-button" id="resetBtn" type="button" aria-label="Reset timer" title="Reset">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6" /></svg>
+              </button>
+              <button class="primary-button" id="startBtn" type="button">
+                <span class="play-symbol">▶</span>
+                <span>Start</span>
+              </button>
+              <button class="icon-button" id="skipBtn" type="button" aria-label="Skip to next mode" title="Skip">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 5 8 7-8 7V5Zm10 0h4v14h-4V5Z" /></svg>
+              </button>
+            </div>
+
+            <div class="stats">
+              <div>
+                <span id="roundsDone">0</span>
+                <small>sessions</small>
+              </div>
+              <div>
+                <span id="streakLabel">quiet</span>
+                <small>pace</small>
+              </div>
+              <div>
+                <span id="ambientLabel">on</span>
+                <small>pond sound</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="art-panel" aria-label="Duck pond illustration">
+            <img src="assets/duck-pond.svg" alt="A sunny illustrated duck floating on a calm pond" />
+            <div class="lilypad pad-one" aria-hidden="true"></div>
+            <div class="lilypad pad-two" aria-hidden="true"></div>
+            <div class="float-note">
+              <span class="note-dot"></span>
+              <span id="focusHint">One task. One pond. No rush.</span>
+            </div>
+          </section>
+        </div>
+
+        <section class="settings" aria-label="Timer settings">
+          <label>
+            <span>Focus</span>
+            <input type="number" min="1" max="120" value="25" data-duration="focus" />
+          </label>
+          <label>
+            <span>Short</span>
+            <input type="number" min="1" max="60" value="5" data-duration="short" />
+          </label>
+          <label>
+            <span>Long</span>
+            <input type="number" min="1" max="90" value="15" data-duration="long" />
+          </label>
+          <label class="toggle-row">
+            <span>Sound</span>
+            <input id="soundToggle" type="checkbox" checked />
+          </label>
+        </section>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
