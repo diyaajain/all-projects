@@ -11,6 +11,7 @@ A collection of projects built with Python, CSS, and web development technologie
 | [cash-register](./cash-register) | A cash register that calculates totals and change due. |
 | [codecrafter-claude-code-python](./codecrafter-claude-code-python) | A Python project built through the CodeCrafters challenge. |
 | [codefinity](./codefinity) | Exercises and projects from Codefinity coursework. |
+| [expense-tracker](./expense-tracker) | A command-line app to log, filter, and summarize your spending. |
 | [indie-pomodoro](./indie-pomodoro) | A Pomodoro-style focus timer. |
 | [palindrome-checker](./palindrome-checker) | Checks whether a given text reads the same forwards and backwards. |
 | [polygon-area-calculator](./polygon-area-calculator) | Calculates the area of polygons. |
