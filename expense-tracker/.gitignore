@@ -1,0 +1,4 @@
+expenses.db
+expenses.csv
+__pycache__/
+.pytest_cache/
