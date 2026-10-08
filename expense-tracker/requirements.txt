@@ -1,0 +1,2 @@
+matplotlib>=3.7  # optional, only needed for the `chart` command
+pytest>=7.0      # optional, only needed to run tests
