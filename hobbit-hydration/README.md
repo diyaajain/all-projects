@@ -20,6 +20,9 @@ A tiny, hobbit-themed macOS menu bar app that reminds you to drink water — at 
 - **Quiet hours** — set wake-up and bedtime; no reminders in between
 - **Notification button** — tap "🍺 Drank my sip" right on the reminder
 - **Map of the Journey** — a 7-day bar chart of your intake vs. your goal
+- **Undo and edit** — an ↩︎ button, a log of today's drinks you can delete from, and a custom-amount box
+- **Menu bar styles** — text, progress ring, ring + amount, or a tiny progress bar
+- **Sound effects** — a soft splash when you drink and a fanfare at your goal (toggle in Settings)
 - **Streaks** — hit your daily goal to extend your streak; miss a day and it resets. Your best streak is saved
 - **Open at login** toggle
 - Everything is saved locally; no accounts, no network, no tracking
@@ -42,6 +45,11 @@ A tiny, hobbit-themed macOS menu bar app that reminds you to drink water — at 
 You no longer need Xcode to run it.
 
 > **Sharing the built app?** Apps built without an Apple Developer ID are unsigned. Other Macs will block it at first; right-click the app → **Open** (or allow it in System Settings → Privacy & Security).
+
+## App icon and sounds
+
+- **Icon:** drop the contents of `AppIcon.appiconset` into `Assets.xcassets` (replace the default `AppIcon`).
+- **Sounds:** add `splash.wav` and `fanfare.wav` to the Xcode project (tick *Copy items if needed* and your app target). If they're missing, the app falls back to built-in macOS sounds.
 
 ## Artwork
 
