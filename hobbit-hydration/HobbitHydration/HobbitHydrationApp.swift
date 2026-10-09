@@ -14,6 +14,12 @@ let vessels = [
     Vessel(name: "Custom", icon: "🪣", oz: 0),
 ]
 
+struct Entry: Codable, Identifiable { var id = UUID(); var t: Date; var oz: Double }
+
+func fmt(_ oz: Double) -> String {
+    oz.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(oz))" : String(format: "%.1f", oz)
+}
+
 enum Prefs {
     private static let d = UserDefaults.standard
     static var weight: Double { d.object(forKey: "weight") as? Double ?? 150 }
@@ -59,8 +65,16 @@ enum Prefs {
         if d.string(forKey: "day") != day(0) {
             d.set(day(0), forKey: "day")
             d.set(0.0, forKey: "drunk")
+            d.removeObject(forKey: "log")
         }
     }
+
+    // Today's individual drinks (for undo / editing)
+    static var log: [Entry] {
+        guard let data = d.data(forKey: "log") else { return [] }
+        return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
+    }
+    static func saveLog(_ l: [Entry]) { d.set(try? JSONEncoder().encode(l), forKey: "log") }
 
     // History (last 30 days) for the Map of the Journey
     static var history: [String: Double] { d.dictionary(forKey: "history") as? [String: Double] ?? [:] }
@@ -71,6 +85,7 @@ enum Prefs {
         rollDay()
         let total = d.double(forKey: "drunk") + oz
         d.set(total, forKey: "drunk")
+        var l = log; l.append(Entry(t: Date(), oz: oz)); saveLog(l)
         let keep = Set((-29...0).map { day($0) })
         var h = history.filter { keep.contains($0.key) }
         h[day()] = total
@@ -85,11 +100,33 @@ enum Prefs {
         return (true, s)
     }
 
-    static func resetToday() {
-        d.set(0.0, forKey: "drunk")
+    /// If today's streak credit was earned and we've dropped below goal, take it back.
+    private static func revokeStreakIfNeeded(total: Double) {
+        guard total < goal, d.string(forKey: "lastGoalDay") == day() else { return }
+        let n = max(0, d.integer(forKey: "streak") - 1)
+        d.set(n, forKey: "streak")
+        d.set(n > 0 ? day(-1) : "", forKey: "lastGoalDay")
+    }
+
+    private static func setToday(_ total: Double) {
+        d.set(total, forKey: "drunk")
         var h = history
-        h[day()] = 0
+        h[day()] = total
         d.set(h, forKey: "history")
+        revokeStreakIfNeeded(total: total)
+    }
+
+    static func removeEntry(_ id: UUID) {
+        var l = log
+        guard let i = l.firstIndex(where: { $0.id == id }) else { return }
+        let e = l.remove(at: i)
+        saveLog(l)
+        setToday(max(0, d.double(forKey: "drunk") - e.oz))
+    }
+
+    static func resetToday() {
+        d.removeObject(forKey: "log")
+        setToday(0)
     }
 }
 
@@ -154,7 +191,10 @@ final class Shire: NSObject, UNUserNotificationCenterDelegate {
     // "🍺 Drank my sip" button on the notification
     func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
-        if r.actionIdentifier == "DRINK" { Prefs.logDrink(oz: Prefs.perReminder) }
+        if r.actionIdentifier == "DRINK" {
+            Prefs.logDrink(oz: Prefs.perReminder)
+            Sound.play("splash", fallback: "Bottle")
+        }
         h()
     }
 }
@@ -168,13 +208,21 @@ struct HobbitHydrationApp: App {
     @AppStorage("weight") private var weight = 150.0
     @AppStorage("streak") private var streak = 0
     @AppStorage("lastGoalDay") private var lastGoalDay = ""
+    @AppStorage("barStyle") private var barStyle = 0
 
     var body: some Scene {
         MenuBarExtra {
             ContentView(shire: shire)
         } label: {
             let live = Prefs.liveStreak(streak, lastGoalDay)
-            Text("🍺 \(Int(drunk))/\(Int(weight / 2)) oz" + (live > 0 ? " · 🔥\(live)" : ""))
+            let p = min(drunk / max(weight / 2, 1), 1)
+            let amount = "\(Int(drunk))/\(Int(weight / 2))" + (live > 0 ? " · \(live)d" : "")
+            switch barStyle {
+            case 1: Image(nsImage: menuBarImage(progress: p, text: nil, bar: false))
+            case 2: Image(nsImage: menuBarImage(progress: p, text: amount, bar: false))
+            case 3: Image(nsImage: menuBarImage(progress: p, text: nil, bar: true))
+            default: Text("🍺 \(Int(drunk))/\(Int(weight / 2)) oz" + (live > 0 ? " · 🔥\(live)" : ""))
+            }
         }
         .menuBarExtraStyle(.window)
     }
@@ -190,6 +238,65 @@ enum Theme {
     static func font(_ size: CGFloat, bold: Bool = false) -> Font {
         .system(size: size, weight: bold ? .bold : .regular, design: .serif)
     }
+}
+
+// MARK: - Sound
+
+enum Sound {
+    private static var playing: [NSSound] = []
+    /// Plays a bundled .wav (splash / fanfare); falls back to a macOS system sound if it isn't in the project.
+    static func play(_ name: String, fallback: String) {
+        guard UserDefaults.standard.object(forKey: "sound") as? Bool ?? true else { return }
+        var snd: NSSound?
+        if let url = Bundle.main.url(forResource: name, withExtension: "wav") {
+            snd = NSSound(contentsOf: url, byReference: true)
+        } else {
+            snd = NSSound(named: NSSound.Name(fallback))
+        }
+        guard let snd else { return }
+        snd.volume = 0.6
+        playing = Array((playing + [snd]).suffix(4))
+        snd.play()
+    }
+}
+
+// MARK: - Menu bar icon (template image: macOS tints it for light/dark)
+
+func menuBarImage(progress: Double, text: String?, bar: Bool) -> NSImage {
+    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                                                .foregroundColor: NSColor.black]
+    let textSize = text.map { ($0 as NSString).size(withAttributes: attrs) } ?? .zero
+    let iconW: CGFloat = bar ? 34 : 16
+    let gap: CGFloat = text == nil ? 0 : 5
+    let img = NSImage(size: NSSize(width: iconW + gap + textSize.width, height: 18), flipped: false) { rect in
+        if bar {
+            NSColor.black.withAlphaComponent(0.3).setFill()
+            NSBezierPath(roundedRect: NSRect(x: 0, y: 6.5, width: iconW, height: 5), xRadius: 2.5, yRadius: 2.5).fill()
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 0, y: 6.5, width: max(5, iconW * progress), height: 5), xRadius: 2.5, yRadius: 2.5).fill()
+        } else {
+            let c = NSPoint(x: 8, y: 9)
+            let track = NSBezierPath()
+            track.appendArc(withCenter: c, radius: 6, startAngle: 0, endAngle: 360)
+            track.lineWidth = 2
+            NSColor.black.withAlphaComponent(0.3).setStroke()
+            track.stroke()
+            if progress > 0 {
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: c, radius: 6, startAngle: 90, endAngle: 90 - 360 * progress, clockwise: true)
+                arc.lineWidth = 2
+                arc.lineCapStyle = .round
+                NSColor.black.setStroke()
+                arc.stroke()
+            }
+        }
+        if let t = text {
+            (t as NSString).draw(at: NSPoint(x: iconW + gap, y: (rect.height - textSize.height) / 2), withAttributes: attrs)
+        }
+        return true
+    }
+    img.isTemplate = true
+    return img
 }
 
 // MARK: - Main panel
@@ -219,7 +326,11 @@ struct ContentView: View {
     @State private var hopStart: Date?
     @State private var cheer: String?
     @State private var celebration: Celebration?
+    @AppStorage("barStyle") var barStyle = 0
+    @AppStorage("sound") var sound = true
     @State private var showSettings = false
+    @State private var showLog = false
+    @State private var customText = ""
     @State private var contentHeight: CGFloat = 640
 
     /// Never taller than the visible screen area (below the menu bar)
@@ -265,10 +376,11 @@ struct ContentView: View {
         }
     }
 
-    func logDrink() {
-        let r = Prefs.logDrink(oz: vesselOz)
+    func logDrink(_ oz: Double) {
+        let r = Prefs.logDrink(oz: oz)
         cheer = cheers.randomElement()
         hopStart = Date()
+        Sound.play(r.goalHit ? "fanfare" : "splash", fallback: r.goalHit ? "Hero" : "Bottle")
         if r.goalHit {
             let doom = milestones.contains(r.streak)
             celebration = Celebration(start: Date(), doom: doom)
@@ -306,11 +418,19 @@ struct ContentView: View {
                 }
             }
 
-            Button { logDrink() } label: {
-                Text("🍺  I drank a \(vessels[vessel].name.lowercased()) (\(Int(vesselOz)) oz)")
-                    .font(Theme.font(14, bold: true)).frame(maxWidth: .infinity).padding(8)
-                    .background(Theme.caramel).foregroundColor(.white).cornerRadius(8)
-            }.buttonStyle(.plain)
+            HStack(spacing: 8) {
+                Button { logDrink(vesselOz) } label: {
+                    Text("🍺  I drank a \(vessels[vessel].name.lowercased()) (\(fmt(vesselOz)) oz)")
+                        .font(Theme.font(14, bold: true)).frame(maxWidth: .infinity).padding(8)
+                        .background(Theme.caramel).foregroundColor(.white).cornerRadius(8)
+                }.buttonStyle(.plain)
+                Button { if let e = Prefs.log.last { Prefs.removeEntry(e.id) } } label: {
+                    Text("↩︎").font(Theme.font(16, bold: true)).frame(width: 34).padding(.vertical, 8)
+                        .background(Color.white.opacity(0.12)).cornerRadius(8)
+                }
+                .buttonStyle(.plain).disabled(Prefs.log.isEmpty).opacity(Prefs.log.isEmpty ? 0.35 : 1)
+                .help("Undo last drink")
+            }
 
             JourneyMap(goal: goal, today: drunk)
 
@@ -319,17 +439,10 @@ struct ContentView: View {
             Toggle("Remind me, as a good hobbit would", isOn: $on)
                 .toggleStyle(.switch).font(Theme.font(13, bold: true))
 
-            Button { showSettings.toggle() } label: {
-                HStack {
-                    Image(systemName: showSettings ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold)).frame(width: 12)
-                    Text("⚙️ Settings").font(Theme.font(13, bold: true))
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            Foldout(title: "📜 Today's log", open: $showLog)
+            if showLog { logSection }
 
+            Foldout(title: "⚙️ Settings", open: $showSettings)
             if showSettings { settings }
 
             HStack {
@@ -357,6 +470,30 @@ struct ContentView: View {
             } catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
         }
         .onAppear { Prefs.rollDay() }
+    }
+
+    var logSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("oz", text: $customText).textFieldStyle(.roundedBorder).frame(width: 60)
+                Button("Add custom amount") {
+                    if let oz = Double(customText), oz > 0, oz <= 128 { logDrink(oz); customText = "" }
+                }
+            }
+            let entries = Array(Prefs.log.reversed())
+            if entries.isEmpty {
+                Text("Nothing logged with the new log yet today.").font(Theme.font(11)).italic().opacity(0.6)
+            }
+            ForEach(entries) { e in
+                HStack {
+                    Text(e.t, style: .time).font(Theme.font(12))
+                    Text("\(fmt(e.oz)) oz").font(Theme.font(12, bold: true))
+                    Spacer()
+                    Button { Prefs.removeEntry(e.id) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.plain).help("Remove this drink")
+                }
+            }
+        }
     }
 
     var settings: some View {
@@ -393,8 +530,34 @@ struct ContentView: View {
             Text("Sip about \(Int(perReminder.rounded())) oz each time, roughly \(String(format: "%.1f", goal / max(vesselOz, 1))) \(vessels[vessel].name.lowercased())s a day.")
                 .font(Theme.font(11)).italic().opacity(0.75)
 
+            Text("Menu bar style").font(Theme.font(13, bold: true))
+            Picker("", selection: $barStyle) {
+                Text("🍺 Text").tag(0)
+                Text("Ring").tag(1)
+                Text("Ring + oz").tag(2)
+                Text("Bar").tag(3)
+            }.pickerStyle(.segmented).labelsHidden()
+
+            Toggle("Sound effects", isOn: $sound).toggleStyle(.switch).font(Theme.font(12))
             Toggle("Open at login", isOn: $launchAtLogin).toggleStyle(.switch).font(Theme.font(12))
         }
+    }
+}
+
+struct Foldout: View {
+    let title: String
+    @Binding var open: Bool
+    var body: some View {
+        Button { open.toggle() } label: {
+            HStack {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .bold)).frame(width: 12)
+                Text(title).font(Theme.font(13, bold: true))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
