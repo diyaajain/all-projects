@@ -319,11 +319,18 @@ struct ContentView: View {
             Toggle("Remind me, as a good hobbit would", isOn: $on)
                 .toggleStyle(.switch).font(Theme.font(13, bold: true))
 
-            DisclosureGroup(isExpanded: $showSettings) {
-                settings.padding(.top, 8)
-            } label: {
-                Text("⚙️ Settings").font(Theme.font(13, bold: true))
+            Button { showSettings.toggle() } label: {
+                HStack {
+                    Image(systemName: showSettings ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .bold)).frame(width: 12)
+                    Text("⚙️ Settings").font(Theme.font(13, bold: true))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            if showSettings { settings }
 
             HStack {
                 Button("Reset today") { Prefs.resetToday() }
