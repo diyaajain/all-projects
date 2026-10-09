@@ -14,6 +14,12 @@ A tiny, hobbit-themed macOS menu bar app that reminds you to drink water — at 
 - **You choose the interval** — 5 to 120 minutes. Reminders arrive at a random time between 70% and 130% of your interval, so they feel like surprises
 - **Notifications** with random hobbit-flavored messages
 - **Progress through Middle-earth** — from "Still snug in Bag End" to "Quest complete — the Ring is in the fire! 🔥"
+- **Animated Bilbo scene** — water rises as you drink, Bilbo breathes, hops and comments on your progress
+- **Celebrations** — falling leaves when you hit your goal, and a Mount Doom eruption on streak milestones (3, 7, 14, 30, 50, 100, 365 days)
+- **Bilbo's mood and outfit** — he looks worried (💧) when you're behind for the time of day, happy (✨) when ahead, and earns accessories from your streak (🍃 3 days, 🍺 7, 👑 14, 💍 30)
+- **Quiet hours** — set wake-up and bedtime; no reminders in between
+- **Notification button** — tap "🍺 Drank my sip" right on the reminder
+- **Map of the Journey** — a 7-day bar chart of your intake vs. your goal
 - **Streaks** — hit your daily goal to extend your streak; miss a day and it resets. Your best streak is saved
 - **Open at login** toggle
 - Everything is saved locally; no accounts, no network, no tracking
@@ -37,6 +43,10 @@ You no longer need Xcode to run it.
 
 > **Sharing the built app?** Apps built without an Apple Developer ID are unsigned. Other Macs will block it at first; right-click the app → **Open** (or allow it in System Settings → Privacy & Security).
 
+## Artwork
+
+The animated scene looks for an image named `bilbo` in `Assets.xcassets` (a transparent PNG). If it's missing, the app falls back to a 🍄 emoji, so it builds and runs without it. The artwork is **not included** in this repo: use your own illustration, or one you have permission to use, and credit the artist.
+
 ## How it works
 
 | Thing | Rule |
@@ -46,6 +56,7 @@ You no longer need Xcode to run it.
 | Reminder timing | random between 70% and 130% of your interval |
 | Streak | +1 each day you reach your goal; resets if you miss a full day |
 | Day boundary | local midnight |
+| Bilbo's mood | worried if you're 20%+ behind the share of the day that has passed |
 
 Settings and progress are stored in `UserDefaults`.
 
@@ -61,9 +72,6 @@ All the fun lives in `HobbitHydrationApp.swift`:
 
 ## Roadmap ideas
 
-- Quiet hours
-- Clickable "I drank it" button on the notification
-- History chart
 - Metric (ml) units
 
 ## License
