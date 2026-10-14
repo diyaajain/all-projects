@@ -16,6 +16,10 @@ def db():
     c.execute("""CREATE TABLE IF NOT EXISTS solves(
         id INTEGER PRIMARY KEY, day TEXT, kind TEXT, who TEXT, how TEXT,
         place TEXT, why TEXT, secs INTEGER, notes TEXT, img TEXT)""")
+    try:
+        c.execute("ALTER TABLE solves ADD COLUMN dns INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     return c
 
 
@@ -63,16 +67,18 @@ def index():
         if r:
             e = dict(r)
             e["min"], e["sec"] = divmod(e["secs"], 60)
+    solved = [r for r in rows if not r["dns"]]
+    dns = len(rows) - len(solved)
     stats = {}
     for k in ("main", "mini"):
-        t = [r["secs"] for r in rows if r["kind"] == k]
+        t = [r["secs"] for r in solved if r["kind"] == k]
         stats[k] = dict(n=len(t), avg=fmt(sum(t) / len(t)) if t else "-",
                         best=fmt(min(t)) if t else "-")
     asc = sorted(rows, key=lambda r: (r["day"], r["id"]))
-    chart = {k: [{"x": r["day"], "y": round(r["secs"] / 60, 2)} for r in asc if r["kind"] == k]
+    chart = {k: [{"x": r["day"], "y": round(r["secs"] / 60, 2)} for r in asc if r["kind"] == k and not r["dns"]]
              for k in ("main", "mini")}
     return render_template_string(PAGE, rows=rows, stats=stats, fmt=fmt,
-                                  streak=streak([r["day"] for r in rows]),
+                                  streak=streak([r["day"] for r in rows]), dns=dns,
                                   chart=json.dumps(chart), today=date.today().isoformat(),
                                   e=e, v=e or {})
 
@@ -82,9 +88,9 @@ def add():
     f = request.form
     img = save_img(request.files.get("img"))
     c = db()
-    c.execute("INSERT INTO solves(day,kind,who,how,place,why,secs,notes,img) VALUES(?,?,?,?,?,?,?,?,?)",
-              (f["day"], f["kind"], f["who"], f["how"], f["place"], f.get("why", ""),
-               get_secs(f), f.get("notes", ""), img))
+    c.execute("INSERT INTO solves(day,kind,who,how,place,why,secs,notes,img,dns) VALUES(?,?,?,?,?,?,?,?,?,?)",
+              (f["day"], f["kind"], f.get("who", ""), f.get("how", ""), f.get("place", ""), f.get("why", ""),
+               get_secs(f), f.get("notes", ""), img, 1 if f.get("dns") else 0))
     c.commit()
     return redirect("/")
 
@@ -95,9 +101,9 @@ def update(i):
     c = db()
     old = c.execute("SELECT img FROM solves WHERE id=?", (i,)).fetchone()
     img = save_img(request.files.get("img"), old["img"] if old else None)
-    c.execute("UPDATE solves SET day=?,kind=?,who=?,how=?,place=?,why=?,secs=?,notes=?,img=? WHERE id=?",
-              (f["day"], f["kind"], f["who"], f["how"], f["place"], f.get("why", ""),
-               get_secs(f), f.get("notes", ""), img, i))
+    c.execute("UPDATE solves SET day=?,kind=?,who=?,how=?,place=?,why=?,secs=?,notes=?,img=?,dns=? WHERE id=?",
+              (f["day"], f["kind"], f.get("who", ""), f.get("how", ""), f.get("place", ""), f.get("why", ""),
+               get_secs(f), f.get("notes", ""), img, 1 if f.get("dns") else 0, i))
     c.commit()
     return redirect("/")
 
@@ -135,12 +141,14 @@ table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{padding:8px;text
 th{color:var(--mu);font-weight:500}.tag{padding:.2em .5em;border-radius:15px;font-size:.75rem;line-height:1;display:inline-block}
 .main{background:var(--ac)}.mini{background:var(--ac2);color:#000}
 .tbl{overflow-x:auto}.top .card{margin-bottom:0}.top{margin-bottom:12px;display:grid;grid-template-columns:1.1fr 1fr;gap:12px;align-items:stretch}.chartcard{display:flex;flex-direction:column;margin-bottom:0}.chartwrap{flex:1;position:relative;min-height:300px}.chartwrap canvas{position:absolute;inset:0}@media(max-width:900px){.top{grid-template-columns:1fr}}a{color:var(--ac2);cursor:pointer}
-.x{background:none;color:var(--ac);padding:0}
+.x{background:none;color:var(--ac);padding:0}.dns{background:var(--mu);color:#fff}
+.dnsbtn{display:inline-flex;align-items:center;border:1px solid #d9d9d3;border-radius:15px;padding:.2em .7em;font-size:.75rem;cursor:pointer;color:var(--mu);user-select:none}.dnsbtn.on{background:var(--mu);color:#fff;border-color:var(--mu)}.dnsbtn input{display:none}
 dialog{background:var(--card);color:var(--tx);border:0;border-radius:15px;max-width:92vw}dialog img{max-width:100%}
 </style></head><body>
 <h1>🔍 Murdle Tracker</h1>
 <div class="card stats">
  <div class="stat"><b>🔥 {{streak}}</b><span>day streak</span></div>
+ <div class="stat"><b>{{dns}}</b><span>DNS</span></div>
  {% for k in ['main','mini'] %}
  <div class="stat"><b>{{stats[k].n}}</b><span>{{k}} solved</span></div>
  <div class="stat"><b>{{stats[k].avg}}</b><span>{{k}} avg</span></div>
@@ -148,8 +156,9 @@ dialog{background:var(--card);color:var(--tx);border:0;border-radius:15px;max-wi
  {% endfor %}
 </div>
 <div class="top"><div class="card chartcard"><div class="chartwrap"><canvas id="ch"></canvas></div></div>
-<div class="card" id="formcard"><h3 style="margin:0 0 8px;font-size:1rem">{{'Edit solve' if e else 'Log a solve'}}</h3>
-<form class="f" method="post" action="{{'/update/%d'%e.id if e else '/add'}}" enctype="multipart/form-data">
+<div class="card" id="formcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0;font-size:1rem">{{'Edit solve' if e else 'Log a solve'}}</h3>
+ <label class="dnsbtn" id="dnslbl"><input type="checkbox" name="dns" id="dns" value="1" form="mainform" {{'checked' if v.dns}}>Did not solve (DNS)</label></div>
+<form class="f" id="mainform" method="post" action="{{'/update/%d'%e.id if e else '/add'}}" enctype="multipart/form-data">
  <input type="date" name="day" value="{{v.day or today}}" required>
  <select name="kind"><option value="main">Main Murdle</option><option value="mini" {{'selected' if v.kind=='mini'}}>Mini Murdle</option></select>
  <div class="time"><input type="number" name="min" id="min" min="0" max="999" value="{{v.min or 0}}" required><span>min</span>
@@ -165,7 +174,7 @@ dialog{background:var(--card);color:var(--tx);border:0;border-radius:15px;max-wi
  {% if e %}<a href="/" class="full" style="text-align:center">Cancel</a>{% endif %}</form></div></div>
 <div class="card tbl"><table><tr><th>Date</th><th></th><th>Who</th><th>How</th><th>Where</th><th>Why</th><th>Time</th><th>Grid</th><th></th></tr>
 {% for r in rows %}<tr><td>{{r.day}}</td><td><span class="tag {{r.kind}}">{{r.kind}}</span></td>
-<td>{{r.who}}</td><td>{{r.how}}</td><td>{{r.place}}</td><td>{{r.why or "-"}}</td><td>{{fmt(r.secs)}}</td>
+<td>{{r.who or "-"}}</td><td>{{r.how or "-"}}</td><td>{{r.place or "-"}}</td><td>{{r.why or "-"}}</td><td>{% if r.dns %}<span class="tag dns">DNS</span>{% else %}{{fmt(r.secs)}}{% endif %}</td>
 <td>{% if r.img %}<a onclick="show('/uploads/{{r.img}}')">view</a>{% endif %}</td>
 <td style="white-space:nowrap"><a href="/?edit={{r.id}}">Edit</a> ·
 <form method="post" action="/delete/{{r.id}}" onsubmit="return confirm('Delete this entry?')" style="display:inline"><button class="x">Delete</button></form></td></tr>{% endfor %}
@@ -194,6 +203,12 @@ secI.addEventListener('input', () => {
   if (s >= 60) { m++; s = 0; } else if (s < 0) { if (m > 0) { m--; s = 59; } else s = 0; }
   secI.value = s; minI.value = m;
 });
+const dnsI = document.getElementById('dns'), dnsL = document.getElementById('dnslbl');
+function syncDns() {
+  dnsL.classList.toggle('on', dnsI.checked);
+  ['who', 'how', 'place'].forEach(n => document.querySelector('[name=' + n + ']').required = !dnsI.checked);
+}
+dnsI.addEventListener('change', syncDns); syncDns();
 function show(u) { document.getElementById('big').src = u; document.getElementById('dlg').showModal(); }
 {% if e %}document.getElementById('formcard').scrollIntoView();{% endif %}
 try {
